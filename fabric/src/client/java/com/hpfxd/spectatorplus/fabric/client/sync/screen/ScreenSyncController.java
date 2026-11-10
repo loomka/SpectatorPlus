@@ -101,7 +101,7 @@ public class ScreenSyncController {
 
         if (mc.screen != screen) {
             syncedInventory = null;
-            syncData.screen = null;
+            clearSyncedScreenData();
             return;
         }
 
@@ -111,12 +111,19 @@ public class ScreenSyncController {
             syncedScreen = null;
             syncedInventory = null;
             syncedWindowId = Integer.MIN_VALUE;
-            syncData.screen = null;
+            // Runs after a disconnect or target change has already cleared the sync data.
+            clearSyncedScreenData();
         });
     }
 
+    private static void clearSyncedScreenData() {
+        if (syncData != null) {
+            syncData.screen = null;
+        }
+    }
+
     public static boolean createInventory(Player spectated) {
-        if (syncData.screen.inventoryItems == null) {
+        if (syncData == null || syncData.screen == null || syncData.screen.inventoryItems == null) {
             return false;
         }
 

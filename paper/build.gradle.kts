@@ -13,6 +13,8 @@ repositories {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:${property("paper_version")}")
+    // Provided by the server at runtime; used to encode items with Minecraft's stream codec.
+    compileOnly("io.netty:netty-buffer:${property("netty_version")}")
 
     implementation("xyz.jpenilla:reflection-remapper:${property("reflection_remapper_version")}")
 }

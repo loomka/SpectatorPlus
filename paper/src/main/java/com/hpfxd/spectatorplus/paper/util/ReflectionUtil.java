@@ -1,6 +1,8 @@
 package com.hpfxd.spectatorplus.paper.util;
 
 import com.hpfxd.spectatorplus.paper.SpectatorPlugin;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.objects.Object2IntArrayMap;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import org.bukkit.Bukkit;
@@ -8,6 +10,7 @@ import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.InventoryView;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import xyz.jpenilla.reflectionremapper.ReflectionRemapper;
 
@@ -23,6 +26,9 @@ public class ReflectionUtil {
     private static Method CraftEntity$getHandle;
     private static Field ServerPlayer$connection;
     private static Method ServerGamePacketListenerImpl$internalTeleport;
+    private static Constructor<?> Vec3$init;
+    private static Object Vec3$ZERO;
+    private static Constructor<?> PositionMoveRotation$init;
     private static Method ServerCommonPacketListenerImpl$send;
     private static Constructor<?> ClientboundSetCameraPacket$init;
 
@@ -31,6 +37,12 @@ public class ReflectionUtil {
     private static Field AbstractContainerMenu$containerId;
     private static Field AbstractContainerMenu$dataSlots;
     private static Method DataSlot$get;
+
+    private static Method CraftItemStack$asNMSCopy;
+    private static Object ItemStack$OPTIONAL_STREAM_CODEC;
+    private static Method StreamEncoder$encode;
+    private static Constructor<?> RegistryFriendlyByteBuf$init;
+    private static Object registryAccess;
 
     static {
         try {
@@ -74,11 +86,20 @@ public class ReflectionUtil {
 
     private static void internalTeleport(Object connection, Location location) throws ReflectiveOperationException {
         if (ServerGamePacketListenerImpl$internalTeleport == null) {
+            // 1.21.2+: internalTeleport(PositionMoveRotation, Set<Relative>)
             final Class<?> clazz = connection.getClass();
-            final Class<?>[] parameterTypes = new Class[]{double.class, double.class, double.class, float.class, float.class, Set.class};
+            final Class<?> vec3Class = Class.forName(REMAPPER.remapClassName("net.minecraft.world.phys.Vec3"));
+            final Class<?> positionClass = Class.forName(REMAPPER.remapClassName("net.minecraft.world.entity.PositionMoveRotation"));
+            final Class<?>[] parameterTypes = new Class[]{positionClass, Set.class};
+
+            Vec3$init = vec3Class.getConstructor(double.class, double.class, double.class);
+            Vec3$ZERO = vec3Class.getField(REMAPPER.remapFieldName(vec3Class, "ZERO")).get(null);
+            PositionMoveRotation$init = positionClass.getConstructor(vec3Class, vec3Class, float.class, float.class);
             ServerGamePacketListenerImpl$internalTeleport = clazz.getMethod(REMAPPER.remapMethodName(clazz, "internalTeleport", parameterTypes), parameterTypes);
         }
-        ServerGamePacketListenerImpl$internalTeleport.invoke(connection, location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch(), Set.of());
+        final Object position = PositionMoveRotation$init.newInstance(
+                Vec3$init.newInstance(location.getX(), location.getY(), location.getZ()), Vec3$ZERO, location.getYaw(), location.getPitch());
+        ServerGamePacketListenerImpl$internalTeleport.invoke(connection, position, Set.of());
     }
 
     private static Object constructCameraPacket(Object minecraftEntity) throws ReflectiveOperationException {
@@ -203,5 +224,47 @@ public class ReflectionUtil {
         }
 
         return resultMap;
+    }
+
+    /*
+     * Items
+     */
+
+    /**
+     * Encode an item with {@code ItemStack.OPTIONAL_STREAM_CODEC}, the format the Fabric client
+     * reads since 1.2.2. The codec writes item components by registry ID, so it needs the
+     * server's registry access.
+     */
+    public static byte[] encodeItem(ItemStack item) throws ReflectiveOperationException {
+        if (RegistryFriendlyByteBuf$init == null) {
+            final Class<?> craftItemStackClass = Class.forName(getCraftBukkitPackagePrefix() + ".inventory.CraftItemStack");
+            CraftItemStack$asNMSCopy = craftItemStackClass.getMethod("asNMSCopy", ItemStack.class);
+
+            final Class<?> itemStackClass = Class.forName(REMAPPER.remapClassName("net.minecraft.world.item.ItemStack"));
+            ItemStack$OPTIONAL_STREAM_CODEC = itemStackClass.getField(REMAPPER.remapFieldName(itemStackClass, "OPTIONAL_STREAM_CODEC")).get(null);
+
+            final Class<?> streamEncoderClass = Class.forName(REMAPPER.remapClassName("net.minecraft.network.codec.StreamEncoder"));
+            StreamEncoder$encode = streamEncoderClass.getMethod(REMAPPER.remapMethodName(streamEncoderClass, "encode", Object.class, Object.class), Object.class, Object.class);
+
+            final Class<?> minecraftServerClass = Class.forName(REMAPPER.remapClassName("net.minecraft.server.MinecraftServer"));
+            final Object server = Bukkit.getServer().getClass().getMethod("getServer").invoke(Bukkit.getServer());
+            registryAccess = minecraftServerClass.getMethod(REMAPPER.remapMethodName(minecraftServerClass, "registryAccess")).invoke(server);
+
+            final Class<?> registryAccessClass = Class.forName(REMAPPER.remapClassName("net.minecraft.core.RegistryAccess"));
+            final Class<?> friendlyByteBufClass = Class.forName(REMAPPER.remapClassName("net.minecraft.network.RegistryFriendlyByteBuf"));
+            RegistryFriendlyByteBuf$init = friendlyByteBufClass.getConstructor(ByteBuf.class, registryAccessClass);
+        }
+
+        final ByteBuf buf = Unpooled.buffer();
+        try {
+            final Object friendlyBuf = RegistryFriendlyByteBuf$init.newInstance(buf, registryAccess);
+            StreamEncoder$encode.invoke(ItemStack$OPTIONAL_STREAM_CODEC, friendlyBuf, CraftItemStack$asNMSCopy.invoke(null, item));
+
+            final byte[] bytes = new byte[buf.readableBytes()];
+            buf.readBytes(bytes);
+            return bytes;
+        } finally {
+            buf.release();
+        }
     }
 }
