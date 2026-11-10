@@ -10,6 +10,10 @@ repositories {
     maven("https://oss.sonatype.org/content/repositories/snapshots")
     maven("https://maven.shedaniel.me/")
     maven("https://maven.terraformersmc.com/releases/")
+    exclusiveContent {
+        forRepository { maven("https://api.modrinth.com/maven") }
+        filter { includeGroup("maven.modrinth") }
+    }
 }
 
 loom {
@@ -42,6 +46,9 @@ dependencies {
     }
 
     modImplementation("com.terraformersmc:modmenu:${property("modmenu_version")}")
+
+    // Compile against Iris for the optional shader hand compatibility mixins.
+    modCompileOnly("maven.modrinth:iris:${property("iris_version")}")
 }
 
 tasks {
