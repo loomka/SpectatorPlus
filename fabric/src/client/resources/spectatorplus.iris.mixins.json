@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.hpfxd.spectatorplus.fabric.client.mixin.compat.iris",
+  "plugin": "com.hpfxd.spectatorplus.fabric.client.mixin.compat.iris.IrisMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "IrisHandRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

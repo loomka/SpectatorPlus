@@ -1,12 +1,10 @@
 package com.hpfxd.spectatorplus.fabric.client.mixin;
 
-import com.google.common.base.MoreObjects;
-import com.hpfxd.spectatorplus.fabric.client.SpectatorClientMod;
 import com.hpfxd.spectatorplus.fabric.client.util.SpecUtil;
+import com.hpfxd.spectatorplus.fabric.client.util.SpectatedHands;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -15,10 +13,6 @@ import net.minecraft.client.renderer.ItemInHandRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.core.Direction;
-import net.minecraft.util.Mth;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Final;
@@ -41,79 +35,17 @@ public abstract class GameRendererMixin {
     @Unique private float walkDist;
     @Unique private float walkDistO;
 
-    @Unique private float xBob;
-    @Unique private float yBob;
-    @Unique private float xBobO;
-    @Unique private float yBobO;
-
     @Inject(method = "renderItemInHand(Lnet/minecraft/client/Camera;FLorg/joml/Matrix4f;)V", at = @At(value = "INVOKE", target = "Lorg/joml/Matrix4fStack;popMatrix()Lorg/joml/Matrix4fStack;"))
     public void spectatorplus$renderItemInHand(Camera camera, float partialTicks, Matrix4f matrix4f, CallbackInfo ci, @Local PoseStack poseStackIn) {
-        if (SpectatorClientMod.config.renderArms && this.minecraft.player != null && this.minecraft.options.getCameraType().isFirstPerson() && !this.minecraft.options.hideGui) {
-            final AbstractClientPlayer spectated = SpecUtil.getCameraPlayer(this.minecraft);
-            if (spectated != null && !spectated.isSpectator()) {
-                this.lightTexture.turnOnLightLayer();
-
-                float attackAnim = spectated.getAttackAnim(partialTicks);
-                final InteractionHand interactionHand = MoreObjects.firstNonNull(spectated.swingingArm, InteractionHand.MAIN_HAND);
-                float pitch = Mth.lerp(partialTicks, spectated.xRotO, spectated.getXRot());
-
-                poseStackIn.mulPose(Axis.XP.rotationDegrees((spectated.getViewXRot(partialTicks) - Mth.lerp(partialTicks, this.xBobO, this.xBob)) * 0.1F));
-                poseStackIn.mulPose(Axis.YP.rotationDegrees(Mth.degreesDifference(Mth.lerp(partialTicks, this.yBobO, this.yBob), Mth.rotLerp(partialTicks, spectated.yRotO, spectated.getYRot())) * 0.1F));
-
-                final ItemInHandRenderer.HandRenderSelection handRenderSelection = evaluateWhichHandsToRender(spectated);
-                final int packedLightCoords = this.minecraft.getEntityRenderDispatcher().getPackedLightCoords(spectated, partialTicks);
-
-                final ItemInHandRendererAccessor accessor = ((ItemInHandRendererAccessor) this.itemInHandRenderer);
-
-                if (handRenderSelection.renderMainHand) {
-                    final float swingProgress = interactionHand == InteractionHand.MAIN_HAND ? attackAnim : 0.0F;
-                    final float equippedProgress = 1F - Mth.lerp(partialTicks, accessor.getOMainHandHeight(), accessor.getMainHandHeight());
-
-                    accessor.invokeRenderArmWithItem(spectated, partialTicks,
-                            pitch, InteractionHand.MAIN_HAND, swingProgress, accessor.getMainHandItem(), equippedProgress,
-                            poseStackIn, this.renderBuffers.bufferSource(), packedLightCoords);
-                }
-
-                if (handRenderSelection.renderOffHand) {
-                    final float swingProgress = interactionHand == InteractionHand.OFF_HAND ? attackAnim : 0.0F;
-                    final float equippedProgress = 1F - Mth.lerp(partialTicks, accessor.getOOffHandHeight(), accessor.getOffHandHeight());
-
-                    accessor.invokeRenderArmWithItem(spectated, partialTicks,
-                            pitch, InteractionHand.OFF_HAND, swingProgress, accessor.getOffHandItem(), equippedProgress,
-                            poseStackIn, this.renderBuffers.bufferSource(), packedLightCoords);
-                }
-
-                this.lightTexture.turnOffLightLayer();
-                this.renderBuffers.bufferSource().endBatch();
-            }
-        }
-    }
-
-    @Unique
-    private static ItemInHandRenderer.HandRenderSelection evaluateWhichHandsToRender(AbstractClientPlayer player) {
-        // see ItemInHandRenderer#evaluateWhichHandsToRender
-        // could not just call into the original method due to the argument being LocalPlayer
-
-        ItemStack mainHandItem = player.getMainHandItem();
-        ItemStack offHandItem = player.getOffhandItem();
-        boolean bl = mainHandItem.is(Items.BOW) || offHandItem.is(Items.BOW);
-        boolean bl2 = mainHandItem.is(Items.CROSSBOW) || offHandItem.is(Items.CROSSBOW);
-        if (!bl && !bl2) {
-            return ItemInHandRenderer.HandRenderSelection.RENDER_BOTH_HANDS;
-        } else if (player.isUsingItem()) {
-            ItemStack itemStack = player.getUseItem();
-            InteractionHand interactionHand = player.getUsedItemHand();
-            if (!itemStack.is(Items.BOW) && !itemStack.is(Items.CROSSBOW)) {
-                return interactionHand == InteractionHand.MAIN_HAND && ItemInHandRendererAccessor.invokeIsChargedCrossbow(player.getOffhandItem())
-                        ? ItemInHandRenderer.HandRenderSelection.RENDER_MAIN_HAND_ONLY
-                        : ItemInHandRenderer.HandRenderSelection.RENDER_BOTH_HANDS;
-            } else {
-                return ItemInHandRenderer.HandRenderSelection.onlyForHand(interactionHand);
-            }
-        } else {
-            return ItemInHandRendererAccessor.invokeIsChargedCrossbow(mainHandItem)
-                    ? ItemInHandRenderer.HandRenderSelection.RENDER_MAIN_HAND_ONLY
-                    : ItemInHandRenderer.HandRenderSelection.RENDER_BOTH_HANDS;
+        // With a shader pack, Iris skips this pass and renders hands through ItemInHandRenderer#renderHandsWithItems,
+        // which ItemInHandRendererMixin redirects to the spectated player.
+        final AbstractClientPlayer spectated = SpectatedHands.target(this.minecraft);
+        if (spectated != null) {
+            this.lightTexture.turnOnLightLayer();
+            final int packedLightCoords = this.minecraft.getEntityRenderDispatcher().getPackedLightCoords(spectated, partialTicks);
+            SpectatedHands.render(this.itemInHandRenderer, spectated, partialTicks, poseStackIn, this.renderBuffers.bufferSource(), packedLightCoords);
+            this.lightTexture.turnOffLightLayer();
+            this.renderBuffers.bufferSource().endBatch();
         }
     }
 
@@ -138,15 +70,10 @@ public abstract class GameRendererMixin {
                 this.bob += (Math.min(0.1F, deltaMovement) - this.bob) * 0.4F;
             }
 
-            // Hand swaying
-
-            this.yBobO = this.yBob;
-            this.xBobO = this.xBob;
-            this.xBob += Mth.degreesDifference(this.xBob, spectated.getXRot()) * 0.5F;
-            this.yBob += Mth.degreesDifference(this.yBob, spectated.getYRot()) * 0.5F;
         } else {
-            this.bob = this.bobO = this.walkDist = this.walkDistO = this.xBob = this.yBob = this.xBobO = this.yBobO = 0;
+            this.bob = this.bobO = this.walkDist = this.walkDistO = 0;
         }
+        SpectatedHands.tickSway(spectated);
     }
 
     @ModifyExpressionValue(method = "bobView(Lcom/mojang/blaze3d/vertex/PoseStack;F)V", at = @At(value = "FIELD", target = "Lnet/minecraft/client/player/AbstractClientPlayer;walkDist:F"))

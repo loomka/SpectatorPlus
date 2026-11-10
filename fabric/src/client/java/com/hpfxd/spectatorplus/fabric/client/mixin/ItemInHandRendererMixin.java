@@ -1,6 +1,9 @@
 package com.hpfxd.spectatorplus.fabric.client.mixin;
 
 import com.hpfxd.spectatorplus.fabric.client.util.SpecUtil;
+import com.hpfxd.spectatorplus.fabric.client.util.SpectatedHands;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.player.LocalPlayer;
@@ -77,6 +80,17 @@ public abstract class ItemInHandRendererMixin {
             }
         } else {
             this.spectated = null;
+        }
+    }
+
+    @Inject(method = "renderHandsWithItems", at = @At("HEAD"), cancellable = true)
+    private void spectatorplus$renderSpectatedHands(float partialTicks, PoseStack poseStack, MultiBufferSource.BufferSource buffer, LocalPlayer player, int packedLight, CallbackInfo ci) {
+        // Vanilla never calls this while the local player is a spectator. Shader pipelines such as Iris call it
+        // to render hands in their own pass, so render the spectated player's arms there instead.
+        final AbstractClientPlayer spectated = SpectatedHands.target(this.minecraft);
+        if (spectated != null) {
+            SpectatedHands.render((ItemInHandRenderer) (Object) this, spectated, partialTicks, poseStack, buffer, packedLight);
+            ci.cancel();
         }
     }
 
