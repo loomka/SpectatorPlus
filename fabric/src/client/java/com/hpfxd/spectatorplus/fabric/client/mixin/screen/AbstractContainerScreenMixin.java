@@ -79,6 +79,12 @@ public abstract class AbstractContainerScreenMixin {
             return;
         }
 
+        // Sync data is cleared on disconnect or when the camera target changes, which can happen
+        // while a synced screen is still open for a frame.
+        if (ClientSyncController.syncData == null || ClientSyncController.syncData.screen == null) {
+            return;
+        }
+
         if (this.originalMouseX == -1 && this.originalMouseY == -1) {
             this.originalMouseX = mouseX;
             this.originalMouseY = mouseY;
